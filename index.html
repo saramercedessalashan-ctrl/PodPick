@@ -91,7 +91,7 @@
         <option value="society & culture">Society & Culture</option>
       </select>
 
-      <select id="country">
+      <select id="country"> <input id="language" placeholder="Language (e.g., English, Spanish)" value="" />
         <option value="" selected>Anywhere</option>
         <option value="US">United States (US)</option>
         <option value="GB">United Kingdom (GB)</option>
@@ -176,6 +176,7 @@
     mode: document.getElementById("mode"),
     genre: document.getElementById("genre"),
     country: document.getElementById("country"),
+    language: document.getElementById("language"),
     status: document.getElementById("status"),
     results: document.getElementById("results"),
     recommend: document.getElementById("recommend"),
@@ -311,9 +312,11 @@
 
     // topic mode
     const topic = (els.topic.value || "").trim() || "podcast";
+    const lang = (els.language.value || "").trim();
     const parts = [topic];
     if (genre !== "any") parts.push(genre);
     if (vibe !== "any") parts.push(vibe);
+    if (lang) parts.push(lang);
     return parts.join(" ");
   }
 

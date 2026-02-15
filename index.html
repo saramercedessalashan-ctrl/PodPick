@@ -92,7 +92,8 @@
       </select>
 
       <select id="country">
-        <option value="US" selected>United States (US)</option>
+        <option value="" selected>Anywhere</option>
+        <option value="US">United States (US)</option>
         <option value="GB">United Kingdom (GB)</option>
         <option value="CA">Canada (CA)</option>
         <option value="AU">Australia (AU)</option>
@@ -219,15 +220,26 @@
   }
 
   async function itunesSearch({ term, country }) {
-    // iTunes Search API (public, no key)
-    const url = "https://itunes.apple.com/search?" + new URLSearchParams({
-      term,
-      media: "podcast",
-      entity: "podcast",
-      limit: "15",
-      country
-    }).toString();
+  // Build params without forcing a country.
+  const params = {
+    term,
+    media: "podcast",
+    entity: "podcast",
+    limit: "15"
+  };
 
+  // Only add the country parameter if the user selected one.
+  // If country is "", it will search "anywhere".
+  if (country) params.country = country;
+
+  const url = "https://itunes.apple.com/search?" + new URLSearchParams(params).toString();
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Search failed");
+  const data = await res.json();
+
+  return (data.results || []).filter(r => r.collectionName && r.collectionViewUrl);
+}
     const res = await fetch(url);
     if (!res.ok) throw new Error("Search failed");
     const data = await res.json();

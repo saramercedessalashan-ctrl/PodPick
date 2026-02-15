@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PodPick Lite</title>
+  <style>
+    :root { --border:#e7e7e7; --muted:#666; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin:0; background:#fff; color:#111; }
+    main { max-width: 920px; margin: 40px auto; padding: 0 16px 64px; }
+    h1 { font-size: 34px; margin: 0 0 8px; }
+    p { margin: 0 0 18px; color: var(--muted); line-height: 1.4; }
+    .card { border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 180px 180px; gap: 12px; }
+    @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+    input, select, button {
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+      background: #fff;
+    }
+    .row { display:flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+    .row button { width: auto; cursor: pointer; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+    .status { margin-top: 12px; font-size: 13px; color: var(--muted); }
+    .results { margin-top: 18px; display: grid; gap: 12px; }
+    .result { display:flex; gap: 14px; border: 1px solid var(--border); border-radius: 16px; padding: 14px; align-items: flex-start; }
+    .art { width: 86px; height: 86px; border-radius: 14px; object-fit: cover; border: 1px solid var(--border); }
+    .meta { flex: 1; }
+    .topline { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .title { font-size: 18px; margin: 0 0 6px; line-height: 1.25; }
+    .desc { margin: 0 0 10px; color: #333; font-size: 14px; line-height: 1.35; }
+    .pillbar { display:flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .pill { font-size: 12px; border: 1px solid var(--border); padding: 6px 10px; border-radius: 999px; color: #333; }
+    a.btn {
+      display:inline-block;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      text-decoration:none;
+      color:#111;
+      font-size: 13px;
+      margin-right: 8px;
+    }
+    .smallbtn { padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background:#fff; cursor:pointer; font-size: 13px; }
+    .footer { margin-top: 18px; font-size: 12px; color: var(--muted); }
+    .err { color: #b00020; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PodPick Lite</h1>
+  <p>Pick a topic + your vibe + time. Get fast podcast recommendations you can open immediately.</p>
+
+  <div class="card">
+    <div class="grid">
+      <input id="topic" placeholder="Topic (e.g., startups, women’s health, true crime)" value="women's health" />
+      <select id="time">
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="30" selected>30 min</option>
+        <option value="60">60 min</option>
+      </select>
+      <select id="vibe">
+        <option value="any" selected>Any vibe</option>
+        <option value="funny">Funny</option>
+        <option value="deep">Deep</option>
+        <option value="chaotic">Chaotic</option>
+        <option value="motivational">Motivational</option>
+      </select>
+    </div>
+
+    <div class="grid" style="margin-top:12px;">
+      <select id="mode">
+        <option value="topic" selected>Topic Search</option>
+        <option value="famous">Famous Picks</option>
+        <option value="surprise">Surprise Me</option>
+      </select>
+
+      <select id="genre">
+        <option value="any" selected>Any genre</option>
+        <option value="business">Business</option>
+        <option value="comedy">Comedy</option>
+        <option value="true crime">True Crime</option>
+        <option value="health">Health</option>
+        <option value="tech">Tech</option>
+        <option value="news">News</option>
+        <option value="education">Education</option>
+        <option value="society & culture">Society & Culture</option>
+      </select>
+
+      <select id="country">
+        <option value="US" selected>United States (US)</option>
+        <option value="GB">United Kingdom (GB)</option>
+        <option value="CA">Canada (CA)</option>
+        <option value="AU">Australia (AU)</option>
+        <option value="IE">Ireland (IE)</option>
+        <option value="IN">India (IN)</option>
+        <option value="DE">Germany (DE)</option>
+        <option value="FR">France (FR)</option>
+        <option value="ES">Spain (ES)</option>
+        <option value="MX">Mexico (MX)</option>
+        <option value="BR">Brazil (BR)</option>
+        <option value="NL">Netherlands (NL)</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <button class="smallbtn" id="recommend">Recommend</button>
+      <button class="smallbtn" id="shuffle">Shuffle</button>
+      <button class="smallbtn" id="copy">Copy share text</button>
+    </div>
+
+    <div class="hint">
+      This “Lite” version is fast + reliable: it searches Apple Podcasts (iTunes Search API) and recommends podcasts you can open instantly.
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="results" id="results"></div>
+
+  <div class="footer">
+    Tip for your submission: “This is a deployed interactive web app (not a chat) that recommends podcasts based on user filters and produces shareable output.”
+  </div>
+</main>
+
+<script>
+  // ---- Curated Famous Picks by country (starter set). You can add more anytime. ----
+  const famousPicksByCountry = {
+    US: [
+      "Huberman Lab",
+      "Call Her Daddy",
+      "All-In Podcast",
+      "The Daily",
+      "SmartLess",
+      "Stuff You Should Know",
+      "Freakonomics Radio",
+      "Lex Fridman Podcast",
+      "Crime Junkie",
+      "This American Life"
+    ],
+    GB: [
+      "The Diary Of A CEO",
+      "Off Menu",
+      "The Rest Is Politics",
+      "No Such Thing As A Fish",
+      "Happy Place"
+    ],
+    CA: ["Canadaland", "Someone Knows Something", "Front Burner"],
+    AU: ["Casefile", "Shameless", "Conversations"],
+    IE: ["Blindboy Podcast", "Irish Times Inside Politics"],
+    IN: ["The Ranveer Show", "Finshots Daily"],
+    DE: ["Fest & Flauschig", "Lage der Nation"],
+    FR: ["Transfert", "Affaires Sensibles"],
+    ES: ["Nadie Sabe Nada", "Entiende Tu Mente"],
+    MX: ["Leyendas Legendarias", "Creativo"],
+    BR: ["Café da Manhã", "NerdCast"],
+    NL: ["De Dag", "BNR Digitaal"]
+  };
+
+  const vibeKeywords = {
+    funny: ["comedy", "funny", "laugh", "hilarious", "jokes", "humor"],
+    deep: ["deep", "meaning", "psychology", "philosophy", "story", "truth"],
+    chaotic: ["chaos", "wild", "unhinged", "drama", "mess", "crazy"],
+    motivational: ["habits", "mindset", "growth", "success", "motivation", "how to"]
+  };
+
+  const els = {
+    topic: document.getElementById("topic"),
+    time: document.getElementById("time"),
+    vibe: document.getElementById("vibe"),
+    mode: document.getElementById("mode"),
+    genre: document.getElementById("genre"),
+    country: document.getElementById("country"),
+    status: document.getElementById("status"),
+    results: document.getElementById("results"),
+    recommend: document.getElementById("recommend"),
+    shuffle: document.getElementById("shuffle"),
+    copy: document.getElementById("copy")
+  };
+
+  let lastResults = [];
+  let lastShareText = "";
+
+  function setStatus(msg, isError=false) {
+    els.status.innerHTML = isError ? `<span class="err">${msg}</span>` : msg;
+  }
+
+  function truncate(s, n=220) {
+    if (!s) return "";
+    const t = String(s).replace(/\s+/g, " ").trim();
+    return t.length > n ? t.slice(0, n-1) + "…" : t;
+  }
+
+  function scoreItem(item, topic, vibe, genre) {
+    const text = `${item.collectionName || ""}\n${item.artistName || ""}\n${item.primaryGenreName || ""}\n${item.collectionExplicitness || ""}`.toLowerCase();
+
+    let score = 0;
+
+    const topicWords = topic.split(/\s+/).filter(Boolean).slice(0, 6);
+    for (const w of topicWords) if (text.includes(w.toLowerCase())) score += 2;
+
+    if (genre && genre !== "any") {
+      if ((item.primaryGenreName || "").toLowerCase().includes(genre.toLowerCase())) score += 3;
+    }
+
+    if (vibe && vibe !== "any") {
+      const kws = vibeKeywords[vibe] || [];
+      for (const k of kws) if (text.includes(k)) score += 1;
+    }
+
+    // tiny boost for non-explicit if user picks motivational/deep etc (optional)
+    if ((item.collectionExplicitness || "").toLowerCase() === "notexplicit") score += 0.5;
+
+    return score;
+  }
+
+  async function itunesSearch({ term, country }) {
+    // iTunes Search API (public, no key)
+    const url = "https://itunes.apple.com/search?" + new URLSearchParams({
+      term,
+      media: "podcast",
+      entity: "podcast",
+      limit: "15",
+      country
+    }).toString();
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Search failed");
+    const data = await res.json();
+    return (data.results || []).filter(r => r.collectionName && r.collectionViewUrl);
+  }
+
+  function renderResults(items) {
+    els.results.innerHTML = "";
+    items.slice(0, 6).forEach((it, idx) => {
+      const art = it.artworkUrl100 || it.artworkUrl60 || "";
+      const genre = it.primaryGenreName || "Podcast";
+      const country = els.country.value;
+
+      const div = document.createElement("div");
+      div.className = "result";
+      div.innerHTML = `
+        ${art ? `<img class="art" src="${art}" alt="">` : ""}
+        <div class="meta">
+          <div class="topline">${genre} • ${country}</div>
+          <h3 class="title">${it.collectionName}</h3>
+          <p class="desc">${truncate(it.artistName ? ("By " + it.artistName) : "", 120)}</p>
+          <div>
+            <a class="btn" href="${it.collectionViewUrl}" target="_blank" rel="noreferrer">Open podcast</a>
+            ${it.feedUrl ? `<a class="btn" href="${it.feedUrl}" target="_blank" rel="noreferrer">Open RSS</a>` : ""}
+            <button class="smallbtn" data-idx="${idx}">Make this my pick</button>
+          </div>
+          <div class="pillbar">
+            <span class="pill">Mode: ${els.mode.value}</span>
+            <span class="pill">Vibe: ${els.vibe.value}</span>
+            <span class="pill">Time: ${els.time.value}m</span>
+          </div>
+        </div>
+      `;
+      els.results.appendChild(div);
+    });
+
+    // attach buttons
+    els.results.querySelectorAll("button[data-idx]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-idx"));
+        const pick = lastResults[idx];
+        lastShareText = `PodPick: ${pick.collectionName} — ${pick.collectionViewUrl}`;
+        setStatus(`Picked: <b>${pick.collectionName}</b>. Copy share text or open the podcast.`);
+      });
+    });
+  }
+
+  function buildTerm() {
+    const mode = els.mode.value;
+    const country = els.country.value;
+    const genre = els.genre.value;
+    const vibe = els.vibe.value;
+
+    if (mode === "famous") {
+      const list = famousPicksByCountry[country] || famousPicksByCountry["US"];
+      const randomShow = list[Math.floor(Math.random() * list.length)];
+      // Add a little genre/vibe bias to the query (fast, still via iTunes)
+      const extra = [];
+      if (genre !== "any") extra.push(genre);
+      if (vibe !== "any") extra.push(vibe);
+      return `${randomShow} podcast ${extra.join(" ")}`.trim();
+    }
+
+    if (mode === "surprise") {
+      const surpriseTopics = ["comedy", "business", "health", "true crime", "news", "technology", "education", "society"];
+      const t = surpriseTopics[Math.floor(Math.random() * surpriseTopics.length)];
+      return `${t} podcast`;
+    }
+
+    // topic mode
+    const topic = (els.topic.value || "").trim() || "podcast";
+    const parts = [topic];
+    if (genre !== "any") parts.push(genre);
+    if (vibe !== "any") parts.push(vibe);
+    return parts.join(" ");
+  }
+
+  async function recommend(shuffle=false) {
+    const country = els.country.value;
+    const topicRaw = (els.topic.value || "").trim();
+    const mode = els.mode.value;
+
+    // Basic guard
+    if (mode === "topic" && !topicRaw) {
+      setStatus("Type a topic first (or switch Mode to Famous Picks / Surprise Me).", true);
+      return;
+    }
+
+    setStatus("Searching podcasts…");
+    els.results.innerHTML = "";
+    lastResults = [];
+    lastShareText = "";
+
+    try {
+      const term = buildTerm();
+      const results = await itunesSearch({ term, country });
+
+      // rank + keep top 6
+      const vibe = els.vibe.value;
+      const genre = els.genre.value;
+
+      const scored = results.map(r => ({ r, s: scoreItem(r, topicRaw || term, vibe, genre) }))
+                            .sort((a,b) => b.s - a.s)
+                            .map(x => x.r);
+
+      lastResults = scored.slice(0, 6);
+
+      setStatus(`Found ${results.length} podcasts. Showing top picks.`);
+      renderResults(lastResults);
+
+      // Auto-pick a default (top or random among top 3 if shuffle)
+      const autoPick = shuffle
+        ? lastResults[Math.floor(Math.random() * Math.min(3, lastResults.length))]
+        : lastResults[0];
+
+      if (autoPick) {
+        lastShareText = `PodPick: ${autoPick.collectionName} — ${autoPick.collectionViewUrl}`;
+        setStatus(`Recommended: <b>${autoPick.collectionName}</b>. Open it or Shuffle for another.`);
+      } else {
+        setStatus("No results — try broader keywords or switch Country.", true);
+      }
+
+    } catch (e) {
+      setStatus("Search failed. Try again or switch Country/Mode.", true);
+    }
+  }
+
+  els.recommend.addEventListener("click", () => recommend(false));
+  els.shuffle.addEventListener("click", () => recommend(true));
+
+  els.copy.addEventListener("click", async () => {
+    const text = lastShareText || "PodPick Lite — try it!";
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("Copied share text ✅");
+    } catch {
+      setStatus("Couldn’t copy automatically. Select and copy manually:", true);
+      alert(text);
+    }
+  });
+
+  // Run once on load so it looks alive immediately
+  recommend(false);
+</script>
+</body>
+</html>

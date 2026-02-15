@@ -405,32 +405,32 @@
     return score;
   }
 
-  // --------- Episodes via your Vercel API route (/api/episodes) ----------
-  async function fetchEpisodes(feedUrl, limit=20){
-    const cacheKey = "rss:" + feedUrl;
-    const cached = cacheGet(cacheKey);
-    if(cached) return cached;
+async function fetchEpisodes(feedUrl, collectionId, limit=20){
+  const cacheKey = "rss:" + feedUrl;
+  const cached = cacheGet(cacheKey);
+  if(cached) return cached;
 
-    const url = `/api/episodes?feedUrl=${encodeURIComponent(feedUrl)}&limit=${encodeURIComponent(limit)}`;
-    const res = await fetch(url);
+  const url = `/api/episodes?feedUrl=${encodeURIComponent(feedUrl)}&collectionId=${encodeURIComponent(collectionId || "")}&limit=${encodeURIComponent(limit)}`;
+  const res = await fetch(url);
 
-    const text = await res.text();
-    if(!res.ok) throw new Error(text || "RSS fetch failed");
+  const text = await res.text();
+  if(!res.ok) throw new Error(text || "RSS fetch failed");
 
-    const data = JSON.parse(text);
+  const data = JSON.parse(text);
 
-    const payload = { episodes: (data.items || []).map(it => ({
-      title: it.title || "",
-      link: it.link || "", // ignored in UI
-      pubDate: it.pubDate || "",
-      description: it.description || "",
-      durationSeconds: parseDurationToSeconds(it.itunesDuration),
-      enclosureUrl: it.enclosureUrl || ""
-    }))};
+  const payload = { episodes: (data.items || []).map(it => ({
+  title: it.title || "",
+  pubDate: it.pubDate || "",
+  description: it.description || "",
+  durationSeconds: parseDurationToSeconds(it.itunesDuration),
+  enclosureUrl: it.enclosureUrl || "",
+  appleUrl: it.appleUrl || ""
+}))};
 
-    cacheSet(cacheKey, payload);
-    return payload;
-  }
+  cacheSet(cacheKey, payload);
+  return payload;
+}
+
 
   function withinRecency(ep, days){
     if(!days || days === "any") return true;
@@ -499,16 +499,29 @@
       const epDiv = document.createElement("div");
       epDiv.className = "ep";
       epDiv.innerHTML = `
-        <div class="epmeta">
-          ${ep.pubDate ? truncate(ep.pubDate, 40) : ""}
-          ${mins != null ? ` • ~${mins} min` : ""}
-        </div>
-        <h4>${ep.title}</h4>
-        <p class="desc">${truncate(ep.description, 180)}</p>
-        <div class="btns">
-          <a class="btn" href="${yt}" target="_blank" rel="noreferrer">YouTube</a>
-        </div>
-      `;
+  <div style="display:flex; gap:12px; align-items:flex-start;">
+    
+    ${art ? `<img class="art" src="${art}" alt="">` : ""}
+    
+    <div style="flex:1;">
+      <div class="epmeta">
+        ${ep.pubDate ? truncate(ep.pubDate, 40) : ""}
+        ${mins != null ? ` • ~${mins} min` : ""}
+      </div>
+
+      <h4>${ep.title}</h4>
+
+      <p class="desc">${truncate(ep.description, 180)}</p>
+
+      <div class="btns">
+        ${ep.appleUrl ? `<a class="btn" href="${ep.appleUrl}" target="_blank">Play on Apple Podcasts</a>` : ""}
+        <a class="btn" href="${youtubeLink(podcast.collectionName, ep.title)}" target="_blank">YouTube</a>
+      </div>
+    </div>
+
+  </div>
+`;
+
       epsWrap.appendChild(epDiv);
     });
 
@@ -631,7 +644,7 @@
         return;
       }
 
-      const payload = await fetchEpisodes(feedUrl, 20);
+      const payload = await fetchEpisodes(feedUrl, chosen.collectionId, 20);
       let episodes = payload.episodes || [];
 
       episodes = episodes

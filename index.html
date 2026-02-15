@@ -426,39 +426,28 @@
     }
   }
 
-  async function fetchEpisodes(feedUrl, limit=20){
-    const cacheKey = "rss:" + feedUrl;
-    const cached = cacheGet(cacheKey);
-    if(cached) return cached;
+async function fetchEpisodes(feedUrl, limit=20){
+  const cacheKey = "rss:" + feedUrl;
+  const cached = cacheGet(cacheKey);
+  if(cached) return cached;
 
-    // allorigins raw proxy
-    const proxied = "https://api.allorigins.win/raw?url=" + encodeURIComponent(feedUrl);
-    const xmlText = await fetchTextWithTimeout(proxied, 3500);
+  const url = `/api/episodes?feedUrl=${encodeURIComponent(feedUrl)}&limit=${encodeURIComponent(limit)}`;
+  const res = await fetch(url);
+  if(!res.ok) throw new Error("RSS fetch failed");
+  const data = await res.json();
 
-    const doc = new DOMParser().parseFromString(xmlText, "text/xml");
-    const items = Array.from(doc.querySelectorAll("item")).slice(0, limit);
+  const payload = { episodes: (data.items || []).map(it => ({
+    title: it.title || "",
+    link: it.link || "",
+    pubDate: it.pubDate || "",
+    description: it.description || "",
+    durationSeconds: parseDurationToSeconds(it.itunesDuration),
+    enclosureUrl: it.enclosureUrl || ""
+  }))};
 
-    const eps = items.map(it => {
-      const title = it.querySelector("title")?.textContent?.trim() || "";
-      const link = it.querySelector("link")?.textContent?.trim() || "";
-      const pubDate = it.querySelector("pubDate")?.textContent?.trim() || "";
-      const desc = (it.querySelector("description")?.textContent || "").replace(/<[^>]*>/g,"").trim();
-
-      // itunes:duration can be namespaced; DOMParser keeps tagName like "itunes:duration"
-      const durRaw = it.querySelector("itunes\\:duration")?.textContent?.trim()
-                  || it.querySelector("duration")?.textContent?.trim()
-                  || "";
-      const durSec = parseDurationToSeconds(durRaw);
-
-      const enclosure = it.querySelector("enclosure")?.getAttribute("url") || "";
-
-      return { title, link, pubDate, description: desc, durationSeconds: durSec, enclosureUrl: enclosure };
-    });
-
-    const payload = { episodes: eps };
-    cacheSet(cacheKey, payload);
-    return payload;
-  }
+  cacheSet(cacheKey, payload);
+  return payload;
+}
 
   function withinRecency(ep, days){
     if(!days || days === "any") return true;

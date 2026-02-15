@@ -128,7 +128,7 @@
 <body>
 <main>
   <h1>PodPick</h1>
-  <p class="sub">Pick a topic + mood + time range. PodPick returns <b>episodes</b> you can open instantly (not just the podcast).</p>
+  <p class="sub">Pick a topic + mood + time range. PodPick returns <b>episodes</b> and opens them via <b>YouTube</b>.</p>
 
   <div class="panel">
     <div class="grid">
@@ -222,14 +222,14 @@
 
     <div class="status" id="status"></div>
     <div class="hint">
-      Built as a deployed interactive web product (not a chat). Uses Apple Podcasts directory + RSS to fetch episode links.
+      Built as a deployed interactive web product (not a chat). Uses the Apple Podcasts directory for discovery + RSS for episode metadata, but all user-facing links go to YouTube.
     </div>
   </div>
 
   <div class="results" id="results"></div>
 
   <div class="footer">
-    If a feed fails, try another podcast—some shows have broken or blocked RSS feeds.
+    If a feed fails, try Shuffle or another show—some RSS feeds are blocked/broken.
   </div>
 </main>
 
@@ -334,13 +334,9 @@
     return ms / (1000*60*60*24);
   }
 
-  function platformLinks(podcastName, episodeTitle, appleLink){
+  function youtubeLink(podcastName, episodeTitle){
     const q = encodeURIComponent(`${podcastName} ${episodeTitle}`);
-    return {
-      apple: appleLink || "",
-      spotify: `https://open.spotify.com/search/${q}`,
-      youtube: `https://www.youtube.com/results?search_query=${q}`
-    };
+    return `https://www.youtube.com/results?search_query=${q}`;
   }
 
   // --------- caching (10 minutes) ----------
@@ -363,7 +359,7 @@
     }catch{}
   }
 
-  // --------- iTunes search ----------
+  // --------- iTunes search (directory only; no Apple links shown) ----------
   async function itunesSearch({ term, country }){
     const params = { term, media:"podcast", entity:"podcast", limit:"15" };
     if(country) params.country = country;
@@ -377,7 +373,7 @@
     if(!res.ok) throw new Error("Search failed");
     const data = await res.json();
 
-    const cleaned = (data.results || []).filter(r => r.collectionName && r.collectionViewUrl && r.feedUrl);
+    const cleaned = (data.results || []).filter(r => r.collectionName && r.feedUrl);
     cacheSet(cacheKey, cleaned);
     return cleaned;
   }
@@ -386,18 +382,15 @@
     const text = `${p.collectionName||""} ${p.artistName||""} ${p.primaryGenreName||""}`.toLowerCase();
     let score = 0;
 
-    // topic words
     const words = (topic||"").split(/\s+/).filter(Boolean).slice(0,8);
     for(const w of words){
       if(text.includes(w.toLowerCase())) score += 3;
     }
 
-    // genre strict-ish boost
     if(genre && genre !== "any"){
       if((p.primaryGenreName||"").toLowerCase().includes(genre.toLowerCase())) score += 6;
     }
 
-    // mood boost
     if(mood && mood !== "any"){
       const kws = moodKeywords[mood] || [];
       for(const k of kws){
@@ -405,7 +398,6 @@
       }
     }
 
-    // language bias (weak)
     if(language){
       if(text.includes(language.toLowerCase())) score += 1;
     }
@@ -413,41 +405,32 @@
     return score;
   }
 
-  // --------- RSS fetch + parse (via allorigins to avoid CORS) ----------
-  async function fetchTextWithTimeout(url, ms=3000){
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), ms);
-    try{
-      const res = await fetch(url, { signal: controller.signal });
-      if(!res.ok) throw new Error("fetch failed");
-      return await res.text();
-    } finally {
-      clearTimeout(t);
-    }
+  // --------- Episodes via your Vercel API route (/api/episodes) ----------
+  async function fetchEpisodes(feedUrl, limit=20){
+    const cacheKey = "rss:" + feedUrl;
+    const cached = cacheGet(cacheKey);
+    if(cached) return cached;
+
+    const url = `/api/episodes?feedUrl=${encodeURIComponent(feedUrl)}&limit=${encodeURIComponent(limit)}`;
+    const res = await fetch(url);
+
+    const text = await res.text();
+    if(!res.ok) throw new Error(text || "RSS fetch failed");
+
+    const data = JSON.parse(text);
+
+    const payload = { episodes: (data.items || []).map(it => ({
+      title: it.title || "",
+      link: it.link || "", // ignored in UI
+      pubDate: it.pubDate || "",
+      description: it.description || "",
+      durationSeconds: parseDurationToSeconds(it.itunesDuration),
+      enclosureUrl: it.enclosureUrl || ""
+    }))};
+
+    cacheSet(cacheKey, payload);
+    return payload;
   }
-
-async function fetchEpisodes(feedUrl, limit=20){
-  const cacheKey = "rss:" + feedUrl;
-  const cached = cacheGet(cacheKey);
-  if(cached) return cached;
-
-  const url = `/api/episodes?feedUrl=${encodeURIComponent(feedUrl)}&limit=${encodeURIComponent(limit)}`;
-  const res = await fetch(url);
-  if(!res.ok) throw new Error("RSS fetch failed");
-  const data = await res.json();
-
-  const payload = { episodes: (data.items || []).map(it => ({
-    title: it.title || "",
-    link: it.link || "",
-    pubDate: it.pubDate || "",
-    description: it.description || "",
-    durationSeconds: parseDurationToSeconds(it.itunesDuration),
-    enclosureUrl: it.enclosureUrl || ""
-  }))};
-
-  cacheSet(cacheKey, payload);
-  return payload;
-}
 
   function withinRecency(ep, days){
     if(!days || days === "any") return true;
@@ -457,7 +440,7 @@ async function fetchEpisodes(feedUrl, limit=20){
   }
 
   function withinTimeRange(ep, minMin, maxMin){
-    if(ep.durationSeconds == null) return true; // if unknown, allow
+    if(ep.durationSeconds == null) return true;
     const minS = Number(minMin) * 60;
     const maxS = Number(maxMin) * 60;
     return ep.durationSeconds >= minS && ep.durationSeconds <= maxS;
@@ -499,7 +482,7 @@ async function fetchEpisodes(feedUrl, limit=20){
         <h3 class="title">${podcast.collectionName}</h3>
         <p class="desc">${truncate(podcast.artistName ? ("By " + podcast.artistName) : "", 120)}</p>
         <div class="btns">
-          <a class="btn" href="${podcast.collectionViewUrl}" target="_blank" rel="noreferrer">Open podcast page</a>
+          <a class="btn" href="${youtubeLink(podcast.collectionName, episodes?.[0]?.title || "podcast")}" target="_blank" rel="noreferrer">Open on YouTube</a>
           <button class="btn" data-copy>Copy share text</button>
         </div>
       </div>
@@ -510,7 +493,7 @@ async function fetchEpisodes(feedUrl, limit=20){
     epsWrap.className = "episodes";
 
     episodes.slice(0, 10).forEach(ep => {
-      const links = platformLinks(podcast.collectionName, ep.title, ep.link);
+      const yt = youtubeLink(podcast.collectionName, ep.title);
       const mins = ep.durationSeconds != null ? Math.round(ep.durationSeconds/60) : null;
 
       const epDiv = document.createElement("div");
@@ -523,10 +506,7 @@ async function fetchEpisodes(feedUrl, limit=20){
         <h4>${ep.title}</h4>
         <p class="desc">${truncate(ep.description, 180)}</p>
         <div class="btns">
-          ${links.apple ? `<a class="btn" href="${links.apple}" target="_blank" rel="noreferrer">Apple Podcasts</a>` : ""}
-          <a class="btn" href="${links.spotify}" target="_blank" rel="noreferrer">Spotify</a>
-          <a class="btn" href="${links.youtube}" target="_blank" rel="noreferrer">YouTube</a>
-          ${ep.enclosureUrl ? `<a class="btn" href="${ep.enclosureUrl}" target="_blank" rel="noreferrer">Audio file</a>` : ""}
+          <a class="btn" href="${yt}" target="_blank" rel="noreferrer">YouTube</a>
         </div>
       `;
       epsWrap.appendChild(epDiv);
@@ -534,11 +514,10 @@ async function fetchEpisodes(feedUrl, limit=20){
 
     card.appendChild(epsWrap);
 
-    // copy share text = top episode link if available
     card.querySelector("button[data-copy]").addEventListener("click", async () => {
       const first = episodes[0];
-      const link = first?.link || podcast.collectionViewUrl;
-      const text = `PodPick: "${first?.title || "Episode"}" — ${podcast.collectionName}\n${link}`;
+      const link = youtubeLink(podcast.collectionName, first?.title || "podcast");
+      const text = `PodPick (YouTube): "${first?.title || "Episode"}" — ${podcast.collectionName}\n${link}`;
       await navigator.clipboard.writeText(text);
       setStatus("Copied share text ✅");
       lastShareText = text;
@@ -552,7 +531,6 @@ async function fetchEpisodes(feedUrl, limit=20){
     let minV = Number(els.minTime.value);
     let maxV = Number(els.maxTime.value);
     if(minV > maxV){
-      // keep ranges sane
       els.minTime.value = String(maxV);
       minV = maxV;
     }
@@ -563,13 +541,13 @@ async function fetchEpisodes(feedUrl, limit=20){
   function populateFamousDropdown(){
     const c = els.country.value || "US";
     const list = famousPicksByCountry[c] || famousPicksByCountry["US"];
-    els.famousPick.innerHTML = `<option value="">Famous pick (optional)</option>` +
+    els.famousPick.innerHTML =
+      `<option value="">Famous pick (optional)</option>` +
       list.map(name => `<option value="${name.replace(/"/g,"&quot;")}">${name}</option>`).join("");
   }
 
   els.country.addEventListener("change", populateFamousDropdown);
   els.mode.addEventListener("change", () => {
-    // if mode is famous, suggest using famous dropdown
     if(els.mode.value === "famous") setStatus("Tip: pick a show in ‘Famous pick’ for instant results.");
   });
 
@@ -605,7 +583,6 @@ async function fetchEpisodes(feedUrl, limit=20){
     els.shuffle.disabled = true;
 
     try{
-      // Build a smarter term
       let term = "";
       if(mode === "famous"){
         const picked = els.famousPick.value || (famousPicksByCountry[country || "US"] || famousPicksByCountry["US"])[0];
@@ -615,11 +592,9 @@ async function fetchEpisodes(feedUrl, limit=20){
         rawTopic = pool[Math.floor(Math.random() * pool.length)];
         term = `${rawTopic} podcast`;
       } else {
-        const expanded = expandTopic(rawTopic);
-        term = expanded;
+        term = expandTopic(rawTopic);
       }
 
-      // add bias words without being weird
       const bias = [];
       if(genre !== "any") bias.push(genre);
       if(mood !== "any") bias.push(mood);
@@ -628,34 +603,28 @@ async function fetchEpisodes(feedUrl, limit=20){
       if(maxMin <= 15) bias.push("short");
       if(bias.length) term = `${term} ${bias.join(" ")}`.trim();
 
-      // iTunes search
       const podcastsAll = await itunesSearch({ term, country });
       if(!podcastsAll.length){
         setStatus("No podcasts found. Try different keywords or Country = Anywhere.", true);
         return;
       }
 
-      // Hard-filter by genre if possible
       let podcasts = podcastsAll;
       if(genre !== "any"){
         const gm = podcastsAll.filter(p => (p.primaryGenreName||"").toLowerCase().includes(genre.toLowerCase()));
         if(gm.length) podcasts = gm;
       }
 
-      // rank + pick one podcast (only 1 RSS fetch for speed)
       const expandedTopic = expandTopic(rawTopic || term);
       const ranked = podcasts
         .map(p => ({ p, s: scorePodcast(p, expandedTopic, mood, genre, language) }))
         .sort((a,b) => b.s - a.s);
 
       const top = ranked.slice(0, 5);
-      const chosen = shuffle
-        ? top[Math.floor(Math.random() * top.length)].p
-        : top[0].p;
+      const chosen = shuffle ? top[Math.floor(Math.random() * top.length)].p : top[0].p;
 
       setStatus("Scanning episodes…");
 
-      // fetch episodes for chosen feed only
       const feedUrl = chosen.feedUrl;
       if(!feedUrl){
         setStatus("This podcast has no RSS feed URL. Try another result.", true);
@@ -665,12 +634,10 @@ async function fetchEpisodes(feedUrl, limit=20){
       const payload = await fetchEpisodes(feedUrl, 20);
       let episodes = payload.episodes || [];
 
-      // filter by recency + time range (when duration exists)
       episodes = episodes
         .filter(ep => withinRecency(ep, recency))
         .filter(ep => withinTimeRange(ep, minMin, maxMin));
 
-      // score episodes and pick the best set
       const scoredEps = episodes
         .map(ep => ({ ep, s: scoreEpisode(ep, expandedTopic, mood) }))
         .sort((a,b) => b.s - a.s)
@@ -678,24 +645,23 @@ async function fetchEpisodes(feedUrl, limit=20){
 
       if(!scoredEps.length){
         setStatus("Found the podcast, but no episodes match your filters. Try wider time range / Any recency.", true);
-        // still show something: fetch original unfiltered
         const fallback = (payload.episodes || []).slice(0, 10);
         els.results.appendChild(renderPodcastCard(chosen, fallback));
-        lastShareText = `PodPick: ${chosen.collectionName} — ${chosen.collectionViewUrl}`;
+        const link = youtubeLink(chosen.collectionName, fallback?.[0]?.title || "podcast");
+        lastShareText = `PodPick (YouTube): ${chosen.collectionName}\n${link}`;
         return;
       }
 
-      // Render result card (episodes visible)
       els.results.appendChild(renderPodcastCard(chosen, scoredEps.slice(0, 10)));
 
-      // share text = top episode link if available
       const first = scoredEps[0];
-      lastShareText = `PodPick: "${first.title}" — ${chosen.collectionName}\n${first.link || chosen.collectionViewUrl}`;
+      const link = youtubeLink(chosen.collectionName, first.title);
+      lastShareText = `PodPick (YouTube): "${first.title}" — ${chosen.collectionName}\n${link}`;
 
       setStatus(`Recommended an episode from <b>${chosen.collectionName}</b>.`);
 
     } catch(e){
-      setStatus("Something failed (RSS may be blocked for that show). Try Shuffle or a different podcast.", true);
+      setStatus(`Something failed. Try Shuffle or another show. ${String(e?.message || e)}`, true);
     } finally {
       els.recommend.disabled = false;
       els.shuffle.disabled = false;
@@ -705,7 +671,7 @@ async function fetchEpisodes(feedUrl, limit=20){
   els.recommend.addEventListener("click", () => recommend(false));
   els.shuffle.addEventListener("click", () => recommend(true));
   els.copy.addEventListener("click", async () => {
-    const text = lastShareText || "PodPick — try it!";
+    const text = lastShareText || "PodPick (YouTube) — try it!";
     try{
       await navigator.clipboard.writeText(text);
       setStatus("Copied share text ✅");
@@ -715,9 +681,9 @@ async function fetchEpisodes(feedUrl, limit=20){
     }
   });
 
-  // Run once so the page looks alive
   recommend(false);
 </script>
 </body>
 </html>
+
 
